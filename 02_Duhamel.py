@@ -272,7 +272,7 @@ if Plot:
 #Number of pedestrians that coss the bridge in the time window
 N = 100 
 # [s] Simulation window
-window = 30*60 
+window = 10*60 
 # [s] Additional seconds to allow simualtion of responce beyond window length (late finishers)
 buffer = 200 
 # [kg] Pedestrian mass
@@ -283,6 +283,7 @@ G = 9.81*mp
 #Random variables
 # Uniformly distributed start times
 tStart = np.random.uniform(low=0.0, high=window, size=N)
+tStart[0] = 0.0
 # Normally distributed walking velocities
 Vp = np.random.normal(loc=1.3, scale=0.125, size=N)
 
@@ -352,7 +353,7 @@ Res_crowd = sum(crowdResponse)
 peaks, times = Peaks(Res_crowd, time)
 
 #------- Plot cummulative modal forces and responses for all pedestrian -------
-Plot = True
+Plot = False
 if Plot:
     fig, axes = plt.subplots(figsize=[14,10], nrows=2, ncols=1)
 
@@ -375,6 +376,105 @@ if Plot:
     axes[1].grid()
     
     plt.show()
+
+# -------------- Animating bridge response & traffic flow ---------------------
+from matplotlib.animation import FuncAnimation
+import matplotlib.gridspec as gridspec
+#%matplotlib notebook
+
+#Animation parameters
+animLength = 100 #[s]
+frameRate = 12 #[-] Frames per second
+plotInterval = 1/frameRate #[s] time betweeen frame plots
+dataInterval = int(plotInterval/delT) #Plot moving elements every 'dataInterval-th' point
+defScale = 500 #Scale factor on bridge deflection (for visibility)
+
+fig, (ax1,ax2) = plt.subplots(nrows=2, ncols=1, figsize=(10,5))
+gs = gridspec.GridSpec(2,1,height_ratios=(1,1))
+ax1 = plt.subplot(gs[0])
+ax2 = plt.subplot(gs[1])
+
+ax1.set_aspect('equal', adjustable='box') #Set equal scale for axes top subplot
+
+#Set axis limits
+ax1.set_xlim([0,L])
+ax1.set_ylim([-3,3])
+yLim2 = defScale*max(Res_crowd)
+ax2.set_xlim([0,L])
+ax2.set_ylim([-yLim2, yLim2])
+
+#Housekeeping
+ax1.set_title('Bridge plan view')
+ax1.set_xlabel('(m)')
+ax1.set_ylabel('(m)')
+ax1.grid()
+ax2.set_title('Bridge oscillation')
+ax2.set_xlabel('(m)')
+ax2.set_ylabel(f'Scaled displacement\n x{defScale} (m)')
+ax2.grid()
+
+plt.show()
+
+#Define initial state of pedestrians in top plot
+topPedList = [] # Initialise an empty list to hold markers representing pedestrians
+for i in np.arange(N):
+    yPos = np.random.uniform(low=-2.5, high=2.5, size=1)
+    pedTop, = ax1.plot(0,yPos,'o',markeredgecolor='k', markersize=10)
+    topPedList.append(pedTop)
+
+#Define initial state of pedestrians in bottom plot
+btmPedList = []
+for i in np.arange(N):
+    ped, = ax2.plot([0,0], [0,0.6*yLim2])
+    btmPedList.append(ped)
+
+#Define the initial state of the beam, in the bottom plot
+xVals = np.arange(0,L+1,1) #An array of x-values along the beam
+phiVals = np.sin(math.pi*xVals/L) #Corresponding phi-values
+beamDisp = 0*phiVals #Initial array of displacements along the beam
+
+axisLine, = ax2.plot(xVals,beamDisp, 'k')
+defLine, = ax2.plot(xVals,beamDisp, 'r')
+
+# Function to animate plot objects
+def animate(i):
+    frm = i*dataInterval # Index of data for this frame
+    simTime = time[frm] # Simulation time for this animation frame
+    
+    # Update the pedestrian positions (top plot) for the current frame
+    for i in np.arange(N):
+        if (simTime>=tStart[i] and simTime<tStart[i] + L/Vp[i]):
+            Pt = topPedList[i]
+            pos = (simTime - tStart[i])*Vp[i]
+            Pt.set_xdata([pos,pos])
+            
+    # Update the beam deflected shape for the current frame
+    defLine.set_data(xVals, -defScale*phiVals*Res_crowd[frm])
+    
+    # Update the pedestrian positions (bottom plot) for the current frame
+    for i in np.arange(N):
+        if (simTime>=tStart[i] and simTime<tStart[i] + L/Vp[i]):
+            Pb = btmPedList[i]
+            pos = (simTime - tStart[i])*Vp[i]
+            h = 0.1 + 0.1*crowdForce[i,frm]/max(crowdForce[i,:])
+            Pb.set_data([pos,pos], [0,h])
+            
+    return Pt, Pb, defLine,
+
+# Function to generate the animation
+myAnimation = FuncAnimation(fig,
+                            animate, 
+                            frames = int(1+(animLength/plotInterval)),
+                            interval = plotInterval*1000,
+                            blit=True,
+                            repeat=True)
+plt.show()
+myAnimation.save('Brindge_response.gif')
+
+
+
+
+
 
 
 
