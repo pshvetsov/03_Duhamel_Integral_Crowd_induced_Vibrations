@@ -226,7 +226,7 @@ def Peaks(disp, time):
 
 #--------------------------- Plot reponse envelope ----------------------------
 peaks, times = Peaks(response, time)
-Plot = True
+Plot = False
 if Plot:
     fig = plt.figure()
     axes = fig.add_axes([0.1,0.1,2,1])
@@ -244,7 +244,7 @@ k = m*wn**2 #[N/m] Original system stiffness
 Masses = [1750, 2000, 2250] #[kg/m] Masses per unit length to test
 
 #------------------- Plot reponse envelope for var. systems -------------------
-Plot = True
+Plot = False
 if Plot:
     fig = plt.figure()
     axes = fig.add_axes([0.1,0.1,2,1])
@@ -268,17 +268,113 @@ if Plot:
     plt.grid()
     plt.show()
 
+#----------------- Dynamic analysis bridge +N pedestrian crowd-----------------
+#Number of pedestrians that coss the bridge in the time window
+N = 100 
+# [s] Simulation window
+window = 30*60 
+# [s] Additional seconds to allow simualtion of responce beyond window length (late finishers)
+buffer = 200 
+# [kg] Pedestrian mass
+mp = 80
+# [N] static weight of pedestrian
+G = 9.81*mp
 
+#Random variables
+# Uniformly distributed start times
+tStart = np.random.uniform(low=0.0, high=window, size=N)
+# Normally distributed walking velocities
+Vp = np.random.normal(loc=1.3, scale=0.125, size=N)
 
+tMax = window + buffer
+time = np.arange(0, tMax+delT, delT)
 
+crowdForce = np.zeros([N, len(time)])
+crowdResponse = np.zeros([N, len(time)])
 
+# For each pedestrian...
+for i, n in enumerate(np.arange(N)):
+    vp = Vp[i] # [m/s] Walking velocity
+    startTime = tStart[i] #[s] Start time
+    tCross = L/vp #[s] Crossing time
+    tEnd = startTime + tCross #[s] Finish time
+    
+    fv = 0.35*vp**2 - 1.59*vp**2 + 2.93*vp # [Hz] Pacing frequency
+    DLF = 0.41*(fv-0.95)
+    # Time vector for this pedestrian
+    timeVector = np.arange(0, tCross+delT, delT)
+    # Static + Dynamic GRF (ignore static component)
+    Fv = G + abs(G*DLF*np.sin(2*math.pi*(fv/2)*timeVector))
+    
+    xp = vp*timeVector
+    phi = np.sin(math.pi*xp/L)
+    Fn = Fv*phi
+    # Responce calculated using the Duhamel integral function
+    response = duhamel(timeVector, Fn)
+    
+    # Save the GRF and response for this pedestrian at the 
+    # correct position in the overal simlation records
+    iStart = round(startTime/delT) # Index for start time
+    crowdForce[i,iStart:iStart+len(Fn)] = Fn
+    crowdResponse[i,iStart:iStart+len(Fn)] = response
 
+#------- Plot idividual modal forces and responses for each pedestrian --------
+Plot = False
+if Plot:
+    fig, axes = plt.subplots(figsize=[14,10], nrows=2, ncols=1)
+    for i in np.arange(len(crowdForce)):
+        axes[0].plot(time,crowdForce[i,:])
+        axes[1].plot(time,-crowdResponse[i,:])
+        
+    #Housekeeping
+    axes[0].plot([window,window],[0,np.max(crowdForce)],'r--')
+    axes[0].plot([window+buffer,window+buffer],[0,np.max(crowdForce)],'r--')
+    axes[0].set_xlabel('time (s)')
+    axes[0].set_ylabel('Force (N)')
+    axes[0].set_title('Individual Modal forces')
+    axes[0].set_xlim([0,tMax])
+    #axes[0].set_xlim([startTime,startTime+tCross])
+    axes[0].grid()
 
+    axes[1].plot([window,window],[0,-np.max(crowdResponse)],'r--')
+    axes[1].plot([window+buffer,window+buffer],[0,-np.max(crowdResponse)],'r--')
+    axes[1].set_xlabel('time (s)') 
+    axes[1].set_ylabel('Disp (m)')
+    axes[1].set_title('Individual Modal responses')
+    axes[1].set_xlim([0,tMax])
+    #axes[1].set_xlim([startTime,startTime+tCross])
+    axes[1].grid()
 
+#Sum across rows of crowdForce and crowdResponse
+F_Crowd = sum(crowdForce)
+Res_crowd = sum(crowdResponse)
 
+peaks, times = Peaks(Res_crowd, time)
 
+#------- Plot cummulative modal forces and responses for all pedestrian -------
+Plot = True
+if Plot:
+    fig, axes = plt.subplots(figsize=[14,10], nrows=2, ncols=1)
 
+    axes[0].plot(time, F_Crowd)
+    axes[1].plot(time, -Res_crowd)
+    axes[1].plot(times, -peaks, 'r-')
+    
+    axes[0].plot([window,window],[0,max(F_Crowd)],'r--')
+    axes[0].plot([window+buffer,window+buffer],[0,max(F_Crowd)],'r--')
+    axes[0].set_xlabel('time (s)')
+    axes[0].set_ylabel('Force (N)')
+    axes[0].set_title('Cummulative Modal forces')
+    axes[0].set_xlim([0,tMax])
+    axes[0].grid()
 
+    axes[1].set_xlabel('time (s)') 
+    axes[1].set_ylabel('Disp (m)')
+    axes[1].set_title('Cummulative Modal responses')
+    axes[1].set_xlim([0,tMax])
+    axes[1].grid()
+    
+    plt.show()
 
 
 
